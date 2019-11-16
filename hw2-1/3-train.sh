@@ -4,12 +4,12 @@ dir=exp/mono
 feat=feat/train.39.cmvn.ark
 
 ### parameters that you can modify
-numiters=5                                    # Number of iterations of training
-maxiterinc=4                                  # Last iter to increase #Gauss on.
-numgauss=1                                    # Initial num-Gauss (must be more than #states=3*phones).
-totgauss=5                                    # Target #Gaussians.
+numiters=25                                   # Number of iterations of training
+maxiterinc=20                                 # Last iter to increase #Gauss on.
+numgauss=30                                   # Initial num-Gauss (must be more than #states=3*phones).
+totgauss=90                                   # Target #Gaussians.
 incgauss=$[($totgauss-$numgauss)/$maxiterinc] # per-iter increment for #Gauss
-realign_iters="1 2 3 4 5";
+realign_iters="1 2 3 4 5 6 7 8 9 10 12 14 16 18 20 22";
 scale_opts="--transition-scale=1.0 --acoustic-scale=0.1 --self-loop-scale=0.1"
 ###
 
