@@ -1,26 +1,35 @@
 #include <stdio.h>
-#include <iostream>
-#include <vector>
+//#include <iostream>
+#include <set>
 #include <unordered_map>
+#include <vector>
+#include <utility>
+#include <algorithm>
 #include "Ngram.h"
 
 #define BUFFER_SIZE 4096
+#define BEAM_LIMIT 1048576
+
+typedef pair<unsigned,float> ppair;
 
 using namespace std;
+
+bool cmp1(ppair &a, ppair &b) {return a.first < b.first;}
+bool cmp2(ppair &a, ppair &b) {return a.second > b.second;}
 
 int main(int argc, char* argv[]) {
     char sen[BUFFER_SIZE]; // sentence
     char cbuf[BUFFER_SIZE];
-    VocabIndex context[2];
+    VocabIndex context[3];
     FILE *inpF, *mapF, *outF;
     string buf;
     unordered_map<string,vector<string> > zbmap;
     vector<string> seq;               // word sequence
     vector<vector<VocabIndex> > iseq; // id sequence
-    vector<vector<float> > pseq;      // probability sequence
-    vector<vector<unsigned> > bptr;   // backtrack pointer
+    vector<vector<ppair> > pseq;      // probability sequence (2D array)
+    vector<vector<unsigned> > bptr;   // backtrack pointer (2D array)
     Vocab voc;
-    Ngram lm(voc, 2); // order=2
+    Ngram lm(voc, 3); // order=3
 
     // read files
     if(argc < 5) return -1;
@@ -47,7 +56,6 @@ int main(int argc, char* argv[]) {
         }
         // save to hash map
         zbmap[seq[0]] = vector<string>(seq.begin()+1, seq.end());
-        //if(zbmap[seq[0]].size() > 1) {cout<<seq[0]<<" "<<zbmap[seq[0]].size()<<endl;}
         seq.clear();
     }
 
@@ -77,45 +85,72 @@ int main(int argc, char* argv[]) {
                 if(iseq[idx][i] == Vocab_None) iseq[idx][i] = voc.getIndex(Vocab_Unknown);
             }
 
+            // beam set
+            int quan = (idx>=2) ? iseq[idx].size()*iseq[idx-1].size()*iseq[idx-2].size() : 0;
+            set<unsigned> blist;
+            if(idx>=2 && quan > BEAM_LIMIT) {
+                sort(pseq[idx-1].begin(), pseq[idx-1].end(), cmp2);
+                for(unsigned l=0; l<(BEAM_LIMIT*3/8/iseq[idx].size()); ++l)
+                    blist.insert(pseq[idx-1][l].first);
+                sort(pseq[idx-1].begin(), pseq[idx-1].end(), cmp1);
+            }
+
             // recursion
+            //int ccnt = 0;
             for(unsigned i=0; i<iseq[idx].size(); ++i) {
-                float m_prob = -1E+37;
-                unsigned m_ptr = 0;
                 switch(idx) {
                     case 0:
-                        context[0] = context[1] = Vocab_None;
-                        m_prob = lm.wordProb(iseq[idx][i], context);
+                        context[0] = context[1] = context[2] = Vocab_None;
+                        pseq[idx].push_back(make_pair(i, lm.wordProb(iseq[idx][i], context)));
+                        break;
+                    case 1:
+                        for(unsigned j=0; j<iseq[idx-1].size(); ++j) {
+                            context[0] = iseq[idx-1][j];
+                            context[1] = context[2] = Vocab_None;
+                            pseq[idx].push_back(make_pair(i*iseq[idx-1].size()+j, pseq[idx-1][j].second + lm.wordProb(iseq[idx][i], context)));
+                        }
                         break;
                     default:
                         for(unsigned j=0; j<iseq[idx-1].size(); ++j) {
-                            context[0] = iseq[idx-1][j];
-                            context[1] = Vocab_None;
-                            float prob = pseq[idx-1][j] + lm.wordProb(iseq[idx][i], context);
-                            if(prob > m_prob) {
-                                m_prob = prob;
-                                m_ptr = j;
+                            float m_prob = -1E+37;
+                            unsigned m_ptr = 0;
+                            for(unsigned k=0; k<iseq[idx-2].size(); ++k) {
+                                unsigned jk = j*iseq[idx-2].size()+k;
+                                // pruning
+                                float prob = pseq[idx-1][jk].second;
+                                if(prob < -1E+3*idx) continue;
+                                if(quan > BEAM_LIMIT && !blist.count(jk)) continue;
+                                // conditional probability
+                                context[0] = iseq[idx-1][j];
+                                context[1] = iseq[idx-2][k];
+                                context[2] = Vocab_None;
+                                prob += lm.wordProb(iseq[idx][i], context);
+                                if(prob > m_prob) {
+                                    m_prob = prob;
+                                    m_ptr = jk;
+                                }
+                                //++ccnt;
                             }
+                            pseq[idx].push_back(make_pair(i*iseq[idx-1].size()+j, m_prob));
+                            bptr[idx].push_back(m_ptr);
                         }
                 }
-                pseq[idx].push_back(m_prob);
-                bptr[idx].push_back(m_ptr);
-
-                //sprintf(cbuf, "%s %.6f %u\n", zbmap[word][i].c_str(), pseq[idx][i], bptr[idx][i]);
-                //fputs(cbuf, outF);
             }
+            //if(idx>=2&&quan>BEAM_LIMIT) cout<<idx<<" "<<ccnt<<" "<<quan<<endl;
             ++idx;
         }
 
         // find max termination
         float m_prob = -1E+37;
         vector<unsigned> path(seq.size());
-        for(unsigned i=0; i<pseq[idx-1].size(); ++i) if(pseq[idx-1][i] > m_prob) {
-            m_prob = pseq[idx-1][i];
-            path[idx-1] = i;
+        for(unsigned ij=0; ij<pseq[idx-1].size(); ++ij) if(pseq[idx-1][ij].second > m_prob) {
+            m_prob = pseq[idx-1][ij].second;
+            path[idx-1] = ij / iseq[idx-2].size();
+            path[idx-2] = ij % iseq[idx-2].size();
         }
         // backtrack
-        for(int i=idx-2; i>=0; --i)
-            path[i] = bptr[i+1][path[i+1]];
+        for(int i=idx-3; i>=0; --i)
+            path[i] = bptr[i+2][path[i+2]*iseq[i+1].size()+path[i+1]] % iseq[i].size();
         // dump string path
         sprintf(cbuf, "<s>");
         for(int i=0; i<idx; ++i) {
