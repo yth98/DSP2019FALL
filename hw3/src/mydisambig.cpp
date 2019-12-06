@@ -8,7 +8,7 @@
 #include "Ngram.h"
 
 #define BUFFER_SIZE 4096
-#define BEAM_LIMIT 1048576
+#define BEAM_LIMIT 786432
 
 typedef pair<unsigned,float> ppair;
 
@@ -90,7 +90,7 @@ int main(int argc, char* argv[]) {
             set<unsigned> blist;
             if(idx>=2 && quan > BEAM_LIMIT) {
                 sort(pseq[idx-1].begin(), pseq[idx-1].end(), cmp2);
-                for(unsigned l=0; l<(BEAM_LIMIT*3/8/iseq[idx].size()); ++l)
+                for(unsigned l=0; l<(BEAM_LIMIT/6/iseq[idx].size()); ++l)
                     blist.insert(pseq[idx-1][l].first);
                 sort(pseq[idx-1].begin(), pseq[idx-1].end(), cmp1);
             }
@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
                                 // pruning
                                 float prob = pseq[idx-1][jk].second;
                                 if(prob < -1E+3*idx) continue;
-                                if(quan > BEAM_LIMIT && !blist.count(jk)) continue;
+                                if(quan > BEAM_LIMIT && !blist.count(j*iseq[idx-2].size()+k)) continue;
                                 // conditional probability
                                 context[0] = iseq[idx-1][j];
                                 context[1] = iseq[idx-2][k];
@@ -127,7 +127,7 @@ int main(int argc, char* argv[]) {
                                 prob += lm.wordProb(iseq[idx][i], context);
                                 if(prob > m_prob) {
                                     m_prob = prob;
-                                    m_ptr = jk;
+                                    m_ptr = k;
                                 }
                                 //++ccnt;
                             }
@@ -150,7 +150,7 @@ int main(int argc, char* argv[]) {
         }
         // backtrack
         for(int i=idx-3; i>=0; --i)
-            path[i] = bptr[i+2][path[i+2]*iseq[i+1].size()+path[i+1]] % iseq[i].size();
+            path[i] = bptr[i+2][path[i+2]*iseq[i+1].size()+path[i+1]];
         // dump string path
         sprintf(cbuf, "<s>");
         for(int i=0; i<idx; ++i) {
