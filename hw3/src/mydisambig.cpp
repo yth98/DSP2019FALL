@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
                                 // pruning
                                 float prob = pseq[idx-1][jk].second;
                                 if(prob < -1E+3*idx) continue;
-                                if(quan > BEAM_LIMIT && !blist.count(j*iseq[idx-2].size()+k)) continue;
+                                if(quan > BEAM_LIMIT && !blist.count(jk)) continue;
                                 // conditional probability
                                 context[0] = iseq[idx-1][j];
                                 context[1] = iseq[idx-2][k];
